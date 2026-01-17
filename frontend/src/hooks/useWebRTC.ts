@@ -18,6 +18,7 @@ export interface LogMessage {
 
 export interface UseWebRTCOptions {
   sessionId: string | null;
+  ttsModel?: 'mars-flash' | 'mars-pro';
   onStatusChange?: (status: PipelineStatus) => void;
   onTranscript?: (message: TranscriptMessage) => void;
   onLog?: (log: LogMessage) => void;
@@ -29,6 +30,8 @@ export interface UseWebRTCReturn {
   connect: () => Promise<void>;
   disconnect: () => void;
   isConnected: boolean;
+  isMuted: boolean;
+  toggleMute: () => void;
 }
 
 // Separate counters for user and assistant messages to ensure unique IDs
@@ -37,12 +40,14 @@ let globalAssistantMessageId = 0;
 
 export function useWebRTC({
   sessionId,
+  ttsModel = 'mars-flash',
   onStatusChange,
   onTranscript,
   onLog,
 }: UseWebRTCOptions): UseWebRTCReturn {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const [pipelineStatus, setPipelineStatus] = useState<PipelineStatus>('idle');
+  const [isMuted, setIsMuted] = useState(false);
 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
@@ -200,6 +205,7 @@ export function useWebRTC({
           sdp: pc.localDescription?.sdp,
           type: pc.localDescription?.type,
           pc_id: pcIdRef.current,
+          tts_model: ttsModel,
         }),
       });
 
@@ -215,7 +221,7 @@ export function useWebRTC({
       setConnectionStatus('disconnected');
       disconnect();
     }
-  }, [connectionStatus, sessionId, handleMessage, disconnect]);
+  }, [connectionStatus, sessionId, ttsModel, handleMessage, disconnect]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -224,11 +230,25 @@ export function useWebRTC({
     };
   }, [disconnect]);
 
+  // Toggle microphone mute
+  const toggleMute = useCallback(() => {
+    if (localStreamRef.current) {
+      const audioTrack = localStreamRef.current.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        setIsMuted(!audioTrack.enabled);
+        console.log('[WebRTC] Microphone muted:', !audioTrack.enabled);
+      }
+    }
+  }, []);
+
   return {
     connectionStatus,
     pipelineStatus,
     connect,
     disconnect,
     isConnected: connectionStatus === 'connected',
+    isMuted,
+    toggleMute,
   };
 }

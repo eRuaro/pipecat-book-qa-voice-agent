@@ -5,12 +5,15 @@ import { StatusIndicator } from './components/StatusIndicator';
 import { ChatInterface } from './components/ChatInterface';
 import { useWebRTC, TranscriptMessage, LogMessage, PipelineStatus } from './hooks/useWebRTC';
 
+type TTSModel = 'mars-flash' | 'mars-pro';
+
 function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [bookInfo, setBookInfo] = useState<{ filename: string } | null>(null);
   const [messages, setMessages] = useState<TranscriptMessage[]>([]);
   const [logs, setLogs] = useState<LogMessage[]>([]);
   const [currentText, setCurrentText] = useState<string>('');
+  const [ttsModel, setTtsModel] = useState<TTSModel>('mars-flash');
 
   // Create session on mount
   useEffect(() => {
@@ -66,8 +69,11 @@ function App() {
     connect,
     disconnect,
     isConnected,
+    isMuted,
+    toggleMute,
   } = useWebRTC({
     sessionId,
+    ttsModel,
     onStatusChange: handleStatusChange,
     onTranscript: handleTranscript,
     onLog: handleLog,
@@ -115,6 +121,37 @@ function App() {
             />
 
             <StatusIndicator status={pipelineStatus} isConnected={isConnected} />
+
+            {/* TTS Model Toggle */}
+            <div className="bg-gray-800 rounded-lg p-4">
+              <h3 className="text-sm font-medium text-gray-300 mb-3">Voice Model</h3>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setTtsModel('mars-flash')}
+                  disabled={connectionStatus !== 'disconnected'}
+                  className={`flex-1 px-3 py-2 text-sm rounded-lg transition-colors ${
+                    ttsModel === 'mars-flash'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  } ${connectionStatus !== 'disconnected' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  Flash
+                  <span className="block text-xs opacity-70">Fast</span>
+                </button>
+                <button
+                  onClick={() => setTtsModel('mars-pro')}
+                  disabled={connectionStatus !== 'disconnected'}
+                  className={`flex-1 px-3 py-2 text-sm rounded-lg transition-colors ${
+                    ttsModel === 'mars-pro'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  } ${connectionStatus !== 'disconnected' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  Pro
+                  <span className="block text-xs opacity-70">Quality</span>
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Center column - Voice control */}
@@ -126,6 +163,30 @@ function App() {
               onDisconnect={disconnect}
               disabled={!sessionId}
             />
+
+            {/* Mute button - only show when connected */}
+            {isConnected && (
+              <button
+                onClick={toggleMute}
+                className={`mt-4 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
+                  isMuted
+                    ? 'bg-red-600 hover:bg-red-700 text-white'
+                    : 'bg-gray-700 hover:bg-gray-600 text-gray-200'
+                }`}
+              >
+                {isMuted ? (
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                  </svg>
+                ) : (
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                  </svg>
+                )}
+                {isMuted ? 'Unmute' : 'Mute'}
+              </button>
+            )}
 
             {!bookInfo && !isConnected && (
               <p className="mt-6 text-sm text-gray-500 text-center max-w-xs">

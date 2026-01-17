@@ -1,7 +1,7 @@
 """Main Pipecat bot for book Q&A voice agent."""
 
 import os
-from typing import Optional
+from typing import Dict, Optional
 
 from loguru import logger
 
@@ -26,8 +26,46 @@ from progress_tracker import STTProgressProcessor, LLMProgressProcessor, TTSStat
 from web_search import WebSearcher
 
 
-# Global web searcher instance
+# Cached API clients (reused across connections to avoid connection overhead)
+_camb_client = None
+_google_client = None
 web_searcher: Optional[WebSearcher] = None
+
+
+def get_camb_client():
+    """Get or create the shared CAMB API client."""
+    global _camb_client
+    if _camb_client is None:
+        from camb.client import AsyncCambAI
+        logger.info("Creating shared CAMB API client")
+        _camb_client = AsyncCambAI(api_key=os.getenv("CAMB_API_KEY"), timeout=60.0)
+    return _camb_client
+
+
+def create_tts_service(model: str = "mars-flash") -> CambTTSService:
+    """Create a TTS service with shared API client."""
+    tts = CambTTSService(
+        api_key=os.getenv("CAMB_API_KEY"),
+        model=model,
+    )
+    # Inject cached client to reuse connections
+    tts._client = get_camb_client()
+    return tts
+
+
+def create_stt_service() -> DeepgramSTTService:
+    """Create a fresh STT service."""
+    return DeepgramSTTService(api_key=os.getenv("DEEPGRAM_API_KEY"))
+
+
+def create_llm_service() -> GoogleLLMService:
+    """Create a fresh LLM service."""
+    llm = GoogleLLMService(
+        api_key=os.getenv("GOOGLE_API_KEY"),
+        model="gemini-3-flash-preview",
+    )
+    llm.register_function("search_web", search_web)
+    return llm
 
 
 SYSTEM_PROMPT_WITH_FILE = """You are a helpful voice assistant that answers questions about the uploaded document.
@@ -101,6 +139,7 @@ async def run_bot(
     file_uri: Optional[str] = None,
     mime_type: Optional[str] = None,
     book_title: Optional[str] = None,
+    tts_model: str = "mars-flash",
 ):
     """Run the voice agent bot for a WebRTC connection.
 
@@ -109,6 +148,7 @@ async def run_bot(
         file_uri: Optional Gemini file URI for the uploaded document.
         mime_type: Optional mime type of the uploaded file.
         book_title: Optional book title.
+        tts_model: TTS model to use (mars-flash or mars-pro).
     """
     from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 
@@ -121,25 +161,12 @@ async def run_bot(
         ),
     )
 
-    # Speech-to-text with Deepgram
-    stt = DeepgramSTTService(
-        api_key=os.getenv("DEEPGRAM_API_KEY"),
-    )
+    # Create fresh service instances (with cached API clients for CAMB)
+    stt = create_stt_service()
+    tts = create_tts_service(tts_model)
+    llm = create_llm_service()
 
-    # CAMB AI TTS - using mars-flash for low latency
-    tts = CambTTSService(
-        api_key=os.getenv("CAMB_API_KEY"),
-        model="mars-flash",
-    )
-
-    # Google Gemini LLM
-    llm = GoogleLLMService(
-        api_key=os.getenv("GOOGLE_API_KEY"),
-        model="gemini-3-flash-preview",
-    )
-
-    # Register web search function
-    llm.register_function("search_web", search_web)
+    logger.info(f"Using TTS model: {tts_model}")
 
     # Create tools and context
     tools = create_tools()

@@ -192,6 +192,7 @@ async def offer(
 ):
     """Handle WebRTC offer from the client."""
     pc_id = request_data.get("pc_id")
+    tts_model = request_data.get("tts_model", "mars-flash")
 
     # Get file info from session if available
     file_uri = None
@@ -225,7 +226,7 @@ async def offer(
                     logger.info(f"Session {session_id} kept (has book)")
             logger.info(f"Connection {c.pc_id} closed, active connections: {len(connections)}, sessions: {len(sessions)}")
 
-        background_tasks.add_task(run_bot, conn, file_uri, mime_type, book_title)
+        background_tasks.add_task(run_bot, conn, file_uri, mime_type, book_title, tts_model)
 
     answer = conn.get_answer()
     connections[answer["pc_id"]] = conn
@@ -241,9 +242,10 @@ if os.path.exists(frontend_path):
 
 def main():
     """Entry point for the server."""
-    print("Starting Book Q&A Voice Agent server...")
-    print("API docs available at http://localhost:7860/docs")
-    uvicorn.run(app, host="0.0.0.0", port=7860)
+    port = int(os.getenv("PORT", 7860))
+    print(f"Starting Book Q&A Voice Agent server on port {port}...")
+    print(f"API docs available at http://localhost:{port}/docs")
+    uvicorn.run(app, host="0.0.0.0", port=port)
 
 
 if __name__ == "__main__":
