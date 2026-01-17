@@ -10,8 +10,12 @@ RUN npm run build
 FROM python:3.12-slim
 WORKDIR /app
 
-# Install git (needed for pip install from git repos)
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+# Install git and OpenCV dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install backend dependencies
 COPY backend/pyproject.toml backend/
