@@ -1,12 +1,7 @@
 [build]
-builder = "nixpacks"
-
-[build.nixpacks]
-pkgs = ["nodejs_20", "python313"]
-buildCommand = "cd frontend && npm install && npm run build && cd ../backend && pip install ."
+builder = "dockerfile"
 
 [deploy]
-startCommand = "cd backend && python server.py"
 healthcheckPath = "/api/health"
 healthcheckTimeout = 300
 restartPolicyType = "on_failure"

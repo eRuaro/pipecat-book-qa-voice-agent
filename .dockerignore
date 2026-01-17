@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Build outputs (will be built in container)
+frontend/dist/
+
+# Dev files
+.git/
+.env
+.env.local
+*.log
+
+# IDE
+.vscode/
+.idea/
