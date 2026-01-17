@@ -135,7 +135,7 @@ async def run_bot(
     # Google Gemini LLM
     llm = GoogleLLMService(
         api_key=os.getenv("GOOGLE_API_KEY"),
-        model="gemini-2.5-flash",
+        model="gemini-3.0-flash-preview",
     )
 
     # Register web search function
