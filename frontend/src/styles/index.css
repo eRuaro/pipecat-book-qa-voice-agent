@@ -3,7 +3,8 @@
 @tailwind utilities;
 
 body {
-  @apply bg-gray-900 text-white;
+  @apply bg-camb-bg text-white;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 /* Custom scrollbar for chat */
@@ -12,11 +13,11 @@ body {
 }
 
 .chat-container::-webkit-scrollbar-track {
-  @apply bg-gray-800 rounded;
+  @apply bg-camb-card rounded;
 }
 
 .chat-container::-webkit-scrollbar-thumb {
-  @apply bg-gray-600 rounded;
+  @apply bg-camb-border rounded;
 }
 
 .chat-container::-webkit-scrollbar-thumb:hover {

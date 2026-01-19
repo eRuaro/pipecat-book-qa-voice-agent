@@ -29,7 +29,7 @@ export function VoiceControl({
           flex items-center justify-center
           ${isConnected
             ? 'bg-red-600 hover:bg-red-700 text-white'
-            : 'bg-green-600 hover:bg-green-700 text-white'
+            : 'bg-camb-orange hover:bg-camb-orange-hover text-white'
           }
           ${isConnecting ? 'opacity-50 cursor-wait' : ''}
           ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
@@ -74,12 +74,12 @@ export function VoiceControl({
             : 'Disconnected'}
         </p>
         {isConnected && (
-          <p className="text-sm text-gray-400 mt-1">
+          <p className="text-sm text-gray-500 mt-1">
             Click to end call
           </p>
         )}
         {!isConnected && !isConnecting && (
-          <p className="text-sm text-gray-400 mt-1">
+          <p className="text-sm text-gray-500 mt-1">
             Click to start voice chat
           </p>
         )}
@@ -92,7 +92,7 @@ export function VoiceControl({
             <div
               key={i}
               className={`w-1 rounded-full audio-bar ${
-                pipelineStatus === 'tts' ? 'bg-green-500' : 'bg-blue-500'
+                pipelineStatus === 'tts' ? 'bg-camb-orange' : 'bg-camb-orange-light'
               }`}
               style={{ animationDelay: `${i * 0.1}s` }}
             />

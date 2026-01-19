@@ -20,7 +20,7 @@ const stages: Stage[] = [
 export function StatusIndicator({ status, isConnected }: StatusIndicatorProps) {
   if (!isConnected) {
     return (
-      <div className="bg-gray-800 rounded-lg p-4">
+      <div className="bg-camb-card border border-camb-border rounded-xl p-4">
         <p className="text-center text-gray-500">Connect to see pipeline status</p>
       </div>
     );
@@ -38,7 +38,7 @@ export function StatusIndicator({ status, isConnected }: StatusIndicatorProps) {
   };
 
   return (
-    <div className="bg-gray-800 rounded-lg p-4">
+    <div className="bg-camb-card border border-camb-border rounded-xl p-4">
       <h3 className="text-sm font-medium text-gray-400 mb-4 text-center">Pipeline Status</h3>
 
       <div className="flex items-center justify-center gap-2">
@@ -55,9 +55,9 @@ export function StatusIndicator({ status, isConnected }: StatusIndicatorProps) {
                   className={`
                     w-12 h-12 rounded-full flex items-center justify-center font-medium text-sm
                     transition-all duration-300
-                    ${isActive ? 'bg-blue-600 text-white status-active' : ''}
+                    ${isActive ? 'bg-camb-orange text-white status-active' : ''}
                     ${isCompleted ? 'bg-green-600 text-white' : ''}
-                    ${!isActive && !isCompleted ? 'bg-gray-700 text-gray-400' : ''}
+                    ${!isActive && !isCompleted ? 'bg-camb-bg border border-camb-border text-gray-500' : ''}
                   `}
                 >
                   {isCompleted ? (
@@ -71,7 +71,7 @@ export function StatusIndicator({ status, isConnected }: StatusIndicatorProps) {
                 <span
                   className={`
                     text-xs mt-2 transition-colors
-                    ${isActive ? 'text-blue-400' : ''}
+                    ${isActive ? 'text-camb-orange' : ''}
                     ${isCompleted ? 'text-green-400' : ''}
                     ${!isActive && !isCompleted ? 'text-gray-500' : ''}
                   `}
@@ -85,7 +85,7 @@ export function StatusIndicator({ status, isConnected }: StatusIndicatorProps) {
                 <div
                   className={`
                     w-8 h-0.5 mx-2 transition-colors
-                    ${isCompleted ? 'bg-green-600' : 'bg-gray-700'}
+                    ${isCompleted ? 'bg-green-600' : 'bg-camb-border'}
                   `}
                 />
               )}
@@ -95,7 +95,7 @@ export function StatusIndicator({ status, isConnected }: StatusIndicatorProps) {
       </div>
 
       {/* Current status text */}
-      <p className="text-center text-sm text-gray-400 mt-4">
+      <p className="text-center text-sm text-gray-500 mt-4">
         {status === 'idle' && 'Waiting for input...'}
         {status === 'listening' && 'Listening to you...'}
         {status === 'stt' && 'Processing speech...'}

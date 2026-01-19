@@ -111,7 +111,7 @@ export function BookUpload({ sessionId, onUploadSuccess, disabled }: BookUploadP
       <h2 className="text-lg font-semibold mb-3 text-gray-200">Upload Book</h2>
 
       {state.uploadedFile ? (
-        <div className="bg-green-900/30 border border-green-700 rounded-lg p-4">
+        <div className="bg-camb-card border border-green-700/50 rounded-xl p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <svg
@@ -129,13 +129,13 @@ export function BookUpload({ sessionId, onUploadSuccess, disabled }: BookUploadP
               </svg>
               <div>
                 <p className="font-medium text-green-400">{state.uploadedFile}</p>
-                <p className="text-sm text-gray-400">Uploaded to Gemini - Ready for Q&A</p>
+                <p className="text-sm text-gray-500">Uploaded to Gemini - Ready for Q&A</p>
               </div>
             </div>
             <button
               onClick={handleClear}
               disabled={disabled}
-              className="text-gray-400 hover:text-white transition-colors disabled:opacity-50"
+              className="text-gray-500 hover:text-white transition-colors disabled:opacity-50"
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path
@@ -155,8 +155,8 @@ export function BookUpload({ sessionId, onUploadSuccess, disabled }: BookUploadP
           onDragLeave={handleDragLeave}
           onClick={() => fileInputRef.current?.click()}
           className={`
-            border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors
-            ${isDragging ? 'border-blue-500 bg-blue-900/20' : 'border-gray-600 hover:border-gray-500'}
+            bg-camb-card border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors
+            ${isDragging ? 'border-camb-orange bg-camb-orange/10' : 'border-camb-border hover:border-camb-orange/50'}
             ${state.isUploading ? 'opacity-50 cursor-wait' : ''}
           `}
         >
@@ -171,13 +171,13 @@ export function BookUpload({ sessionId, onUploadSuccess, disabled }: BookUploadP
 
           {state.isUploading ? (
             <div className="flex flex-col items-center gap-2">
-              <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+              <div className="w-8 h-8 border-2 border-camb-orange border-t-transparent rounded-full animate-spin" />
               <p className="text-gray-400">Uploading to Gemini...</p>
             </div>
           ) : (
             <>
               <svg
-                className="w-12 h-12 mx-auto text-gray-500 mb-3"
+                className="w-12 h-12 mx-auto text-gray-600 mb-3"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"

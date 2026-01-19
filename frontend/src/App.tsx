@@ -7,6 +7,17 @@ import { useWebRTC, TranscriptMessage, LogMessage, PipelineStatus } from './hook
 
 type TTSModel = 'mars-flash' | 'mars-pro';
 
+// CAMB.AI Logo component
+function CambLogo({ className = "h-8" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 120 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 4L2 20h20L12 4z" fill="currentColor" opacity="0.8"/>
+      <path d="M12 8L6 18h12L12 8z" fill="currentColor"/>
+      <text x="28" y="18" fill="currentColor" fontFamily="Inter, sans-serif" fontWeight="600" fontSize="16">CAMB.AI</text>
+    </svg>
+  );
+}
+
 function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [bookInfo, setBookInfo] = useState<{ filename: string } | null>(null);
@@ -93,17 +104,21 @@ function App() {
   }, [isConnected]);
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white flex flex-col">
+    <div className="min-h-screen bg-camb-bg text-white flex flex-col">
       {/* Header */}
-      <header className="border-b border-gray-800 px-6 py-4">
+      <header className="border-b border-camb-border px-6 py-4">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">Book Q&A Voice Agent</h1>
-            <p className="text-sm text-gray-400">Powered by CAMB AI + Pipecat</p>
+          <div className="flex items-center gap-4">
+            <CambLogo className="h-6 text-white" />
+            <div className="h-6 w-px bg-camb-border" />
+            <div>
+              <h1 className="text-lg font-semibold">Book Q&A Voice Agent</h1>
+              <p className="text-xs text-gray-500">Powered by MARS</p>
+            </div>
           </div>
           {sessionId && (
-            <div className="text-xs text-gray-600">
-              Session: {sessionId.slice(0, 8)}...
+            <div className="text-xs text-gray-600 bg-camb-card px-3 py-1 rounded-full">
+              Session: {sessionId.slice(0, 8)}
             </div>
           )}
         </div>
@@ -123,16 +138,16 @@ function App() {
             <StatusIndicator status={pipelineStatus} isConnected={isConnected} />
 
             {/* TTS Model Toggle */}
-            <div className="bg-gray-800 rounded-lg p-4">
-              <h3 className="text-sm font-medium text-gray-300 mb-3">Voice Model</h3>
+            <div className="bg-camb-card border border-camb-border rounded-xl p-4">
+              <h3 className="text-sm font-medium text-gray-400 mb-3">Voice Model</h3>
               <div className="flex gap-2">
                 <button
                   onClick={() => setTtsModel('mars-flash')}
                   disabled={connectionStatus !== 'disconnected'}
                   className={`flex-1 px-3 py-2 text-sm rounded-lg transition-colors ${
                     ttsModel === 'mars-flash'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      ? 'bg-camb-orange text-white'
+                      : 'bg-camb-bg border border-camb-border text-gray-300 hover:border-camb-orange/50'
                   } ${connectionStatus !== 'disconnected' ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   Flash
@@ -143,8 +158,8 @@ function App() {
                   disabled={connectionStatus !== 'disconnected'}
                   className={`flex-1 px-3 py-2 text-sm rounded-lg transition-colors ${
                     ttsModel === 'mars-pro'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      ? 'bg-camb-orange text-white'
+                      : 'bg-camb-bg border border-camb-border text-gray-300 hover:border-camb-orange/50'
                   } ${connectionStatus !== 'disconnected' ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   Pro
@@ -171,7 +186,7 @@ function App() {
                 className={`mt-4 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
                   isMuted
                     ? 'bg-red-600 hover:bg-red-700 text-white'
-                    : 'bg-gray-700 hover:bg-gray-600 text-gray-200'
+                    : 'bg-camb-card border border-camb-border hover:border-camb-orange/50 text-gray-200'
                 }`}
               >
                 {isMuted ? (
@@ -195,7 +210,7 @@ function App() {
             )}
 
             {currentText && (
-              <div className="mt-6 bg-gray-800 rounded-lg p-3 max-w-xs">
+              <div className="mt-6 bg-camb-card border border-camb-border rounded-lg p-3 max-w-xs">
                 <p className="text-sm text-gray-300 italic">"{currentText}"</p>
               </div>
             )}
@@ -209,21 +224,21 @@ function App() {
       </main>
 
       {/* Footer with logs */}
-      <footer className="border-t border-gray-800 px-6 py-3">
+      <footer className="border-t border-camb-border px-6 py-3">
         <div className="max-w-6xl mx-auto">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-xs text-gray-500">
-              Voice powered by CAMB AI mars-flash | Built with Pipecat + Gemini Flash
+            <p className="text-xs text-gray-600">
+              Voice powered by CAMB AI MARS | Built with Pipecat + Gemini
             </p>
             {isConnected && logs.length > 0 && (
-              <span className="text-xs text-green-500 flex items-center gap-1">
-                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+              <span className="text-xs text-camb-orange flex items-center gap-1">
+                <span className="w-2 h-2 bg-camb-orange rounded-full animate-pulse" />
                 Live
               </span>
             )}
           </div>
           {isConnected && (
-            <div className="bg-gray-800/50 rounded p-2 font-mono text-xs text-gray-400 h-32 overflow-y-auto">
+            <div className="bg-camb-card/50 border border-camb-border rounded-lg p-2 font-mono text-xs text-gray-500 h-32 overflow-y-auto">
               {logs.length === 0 ? (
                 <span className="text-gray-600">Waiting for activity...</span>
               ) : (

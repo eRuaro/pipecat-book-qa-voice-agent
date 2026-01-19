@@ -27,7 +27,7 @@ export function ChatInterface({ messages, isConnected }: ChatInterfaceProps) {
 
       <div
         ref={containerRef}
-        className="flex-1 overflow-y-auto chat-container bg-gray-800 rounded-lg p-4 space-y-4"
+        className="flex-1 overflow-y-auto chat-container bg-camb-card border border-camb-border rounded-xl p-4 space-y-4"
       >
         {!isConnected && sortedMessages.length === 0 && (
           <div className="h-full flex items-center justify-center">
@@ -54,8 +54,8 @@ export function ChatInterface({ messages, isConnected }: ChatInterfaceProps) {
               className={`
                 max-w-[80%] rounded-lg px-4 py-2
                 ${message.role === 'user'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-700 text-gray-100'
+                  ? 'bg-camb-orange text-white'
+                  : 'bg-camb-bg border border-camb-border text-gray-100'
                 }
                 ${!message.final ? 'opacity-80' : ''}
               `}
@@ -69,7 +69,7 @@ export function ChatInterface({ messages, isConnected }: ChatInterfaceProps) {
               <p
                 className={`
                   text-xs mt-1
-                  ${message.role === 'user' ? 'text-blue-200' : 'text-gray-400'}
+                  ${message.role === 'user' ? 'text-orange-200' : 'text-gray-500'}
                 `}
               >
                 {message.final
