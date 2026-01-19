@@ -36,8 +36,27 @@ connections: Dict[str, SmallWebRTCConnection] = {}
 # Store sessions with their book processors
 sessions: Dict[str, Dict] = {}
 
-# STUN server for WebRTC NAT traversal
+# ICE servers for WebRTC NAT traversal (STUN + TURN)
 ice_servers = [IceServer(urls="stun:stun.l.google.com:19302")]
+
+# Add TURN server if credentials are configured (required for production)
+turn_url = os.getenv("TURN_URL")
+turn_username = os.getenv("TURN_USERNAME")
+turn_credential = os.getenv("TURN_CREDENTIAL")
+
+if turn_url and turn_username and turn_credential:
+    ice_servers.append(
+        IceServer(urls=turn_url, username=turn_username, credential=turn_credential)
+    )
+    # Also add TCP fallback if it's a standard TURN URL
+    if ":80" in turn_url or not ":443" in turn_url:
+        tcp_url = turn_url.replace(":80", ":443") + "?transport=tcp" if ":80" in turn_url else turn_url.rstrip("/") + ":443?transport=tcp"
+        ice_servers.append(
+            IceServer(urls=tcp_url, username=turn_username, credential=turn_credential)
+        )
+    logger.info(f"TURN server configured: {turn_url}")
+else:
+    logger.warning("No TURN server configured - WebRTC may fail behind NAT/firewall")
 
 
 @app.get("/")
@@ -50,6 +69,28 @@ async def root():
 async def health():
     """Health check endpoint."""
     return {"status": "ok"}
+
+
+@app.get("/api/ice-servers")
+async def get_ice_servers():
+    """Return ICE server configuration for WebRTC clients."""
+    config = [{"urls": "stun:stun.l.google.com:19302"}]
+
+    if turn_url and turn_username and turn_credential:
+        config.append({
+            "urls": turn_url,
+            "username": turn_username,
+            "credential": turn_credential,
+        })
+        # TCP fallback
+        if ":80" in turn_url:
+            config.append({
+                "urls": turn_url.replace(":80", ":443") + "?transport=tcp",
+                "username": turn_username,
+                "credential": turn_credential,
+            })
+
+    return {"iceServers": config}
 
 
 @app.post("/api/session")

@@ -139,6 +139,18 @@ export function useWebRTC({
     setConnectionStatus('connecting');
 
     try {
+      // Fetch ICE servers config from backend (includes TURN if configured)
+      let iceServers: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }];
+      try {
+        const iceResponse = await fetch('/api/ice-servers');
+        const iceConfig = await iceResponse.json();
+        if (iceConfig.iceServers) {
+          iceServers = iceConfig.iceServers;
+        }
+      } catch (e) {
+        console.warn('Failed to fetch ICE servers, using default STUN only:', e);
+      }
+
       // Get microphone access
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -149,10 +161,8 @@ export function useWebRTC({
       });
       localStreamRef.current = stream;
 
-      // Create peer connection
-      const pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-      });
+      // Create peer connection with fetched ICE servers
+      const pc = new RTCPeerConnection({ iceServers });
       peerConnectionRef.current = pc;
 
       // Add audio track
