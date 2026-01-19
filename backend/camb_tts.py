@@ -30,7 +30,7 @@ from pipecat.utils.tracing.service_decorators import traced_tts
 
 # Model-specific sample rates - updated for mars-flash 48kHz output
 MODEL_SAMPLE_RATES: Dict[str, int] = {
-    "mars-flash": 48000,  # Updated: was 22.05kHz, now 48kHz
+    "mars-flash": 22050,  # Updated: was 22.05kHz, now 48kHz
     "mars-pro": 48000,
     "mars-instruct": 22050,
 }
