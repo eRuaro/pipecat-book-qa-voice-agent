@@ -273,9 +273,13 @@ async def offer(
 
 
 # Mount static files for frontend (if exists)
-frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+frontend_path = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"))
+logger.info(f"Looking for frontend at: {frontend_path}")
 if os.path.exists(frontend_path):
+    logger.info(f"Frontend found, mounting static files")
     app.mount("/", StaticFiles(directory=frontend_path, html=True), name="static")
+else:
+    logger.warning(f"Frontend not found at {frontend_path}")
 
 
 def main():
