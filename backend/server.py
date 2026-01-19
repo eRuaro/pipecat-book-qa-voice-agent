@@ -217,13 +217,10 @@ async def offer(
         @conn.event_handler("closed")
         async def handle_closed(c: SmallWebRTCConnection):
             connections.pop(c.pc_id, None)
-            # Clean up session only if no book uploaded (keep sessions with books for reconnect)
+            # Always clean up session to prevent memory leaks
             if session_id and session_id in sessions:
-                if not sessions[session_id].get("file_uri"):
-                    sessions.pop(session_id, None)
-                    logger.info(f"Session {session_id} cleaned up (no book)")
-                else:
-                    logger.info(f"Session {session_id} kept (has book)")
+                sessions.pop(session_id, None)
+                logger.info(f"Session {session_id} cleaned up")
             logger.info(f"Connection {c.pc_id} closed, active connections: {len(connections)}, sessions: {len(sessions)}")
 
         background_tasks.add_task(run_bot, conn, file_uri, mime_type, book_title, tts_model)
