@@ -1,9 +1,12 @@
-"""FastAPI server with WebRTC endpoints for the book Q&A voice agent."""
+"""FastAPI server with Daily WebRTC endpoints for the book Q&A voice agent."""
 
 import os
 import uuid
+import time
 from typing import Dict, Optional
+from contextlib import asynccontextmanager
 
+import aiohttp
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, File, UploadFile, HTTPException
@@ -12,14 +15,37 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
-from pipecat.transports.smallwebrtc.connection import IceServer, SmallWebRTCConnection
+from pipecat.transports.services.helpers.daily_rest import DailyRESTHelper, DailyRoomParams
 
 from book_processor import BookProcessor
 from bot import run_bot
 
 load_dotenv()
 
-app = FastAPI(title="Book Q&A Voice Agent")
+# Shared aiohttp session for Daily API calls
+_aiohttp_session: Optional[aiohttp.ClientSession] = None
+_daily_helper: Optional[DailyRESTHelper] = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage aiohttp session lifecycle."""
+    global _aiohttp_session, _daily_helper
+    _aiohttp_session = aiohttp.ClientSession()
+    daily_api_key = os.getenv("DAILY_API_KEY")
+    if daily_api_key:
+        _daily_helper = DailyRESTHelper(
+            daily_api_key=daily_api_key,
+            aiohttp_session=_aiohttp_session,
+        )
+        logger.info("Daily REST helper initialized")
+    else:
+        logger.warning("DAILY_API_KEY not set - voice calls will not work")
+    yield
+    await _aiohttp_session.close()
+
+
+app = FastAPI(title="Book Q&A Voice Agent", lifespan=lifespan)
 
 # CORS for frontend
 app.add_middleware(
@@ -30,33 +56,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Store active WebRTC connections
-connections: Dict[str, SmallWebRTCConnection] = {}
-
 # Store sessions with their book processors
 sessions: Dict[str, Dict] = {}
-
-# ICE servers for WebRTC NAT traversal (STUN + TURN)
-ice_servers = [IceServer(urls="stun:stun.l.google.com:19302")]
-
-# Add TURN server if credentials are configured (required for production)
-turn_url = os.getenv("TURN_URL")
-turn_username = os.getenv("TURN_USERNAME")
-turn_credential = os.getenv("TURN_CREDENTIAL")
-
-if turn_url and turn_username and turn_credential:
-    ice_servers.append(
-        IceServer(urls=turn_url, username=turn_username, credential=turn_credential)
-    )
-    # Also add TCP fallback if it's a standard TURN URL
-    if ":80" in turn_url or not ":443" in turn_url:
-        tcp_url = turn_url.replace(":80", ":443") + "?transport=tcp" if ":80" in turn_url else turn_url.rstrip("/") + ":443?transport=tcp"
-        ice_servers.append(
-            IceServer(urls=tcp_url, username=turn_username, credential=turn_credential)
-        )
-    logger.info(f"TURN server configured: {turn_url}")
-else:
-    logger.warning("No TURN server configured - WebRTC may fail behind NAT/firewall")
 
 
 @app.get("/")
@@ -71,28 +72,6 @@ async def health():
     return {"status": "ok"}
 
 
-@app.get("/api/ice-servers")
-async def get_ice_servers():
-    """Return ICE server configuration for WebRTC clients."""
-    config = [{"urls": "stun:stun.l.google.com:19302"}]
-
-    if turn_url and turn_username and turn_credential:
-        config.append({
-            "urls": turn_url,
-            "username": turn_username,
-            "credential": turn_credential,
-        })
-        # TCP fallback
-        if ":80" in turn_url:
-            config.append({
-                "urls": turn_url.replace(":80", ":443") + "?transport=tcp",
-                "username": turn_username,
-                "credential": turn_credential,
-            })
-
-    return {"iceServers": config}
-
-
 @app.post("/api/session")
 async def create_session():
     """Create a new session for a user."""
@@ -102,6 +81,7 @@ async def create_session():
         "file_uri": None,
         "mime_type": None,
         "book_title": None,
+        "room_url": None,
     }
     logger.info(f"Created session: {session_id}")
     return {"session_id": session_id}
@@ -109,19 +89,10 @@ async def create_session():
 
 @app.post("/api/session/{session_id}/upload-book")
 async def upload_book(session_id: str, file: UploadFile = File(...)):
-    """Upload a book for the session using Gemini File API.
-
-    Args:
-        session_id: The session ID.
-        file: The uploaded file (PDF or TXT).
-
-    Returns:
-        Success message with file info.
-    """
+    """Upload a book for the session using Gemini File API."""
     if session_id not in sessions:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # Validate file type
     filename = file.filename or "unknown"
     if not (filename.lower().endswith(".pdf") or filename.lower().endswith(".txt")):
         raise HTTPException(
@@ -132,11 +103,8 @@ async def upload_book(session_id: str, file: UploadFile = File(...)):
     try:
         content = await file.read()
         processor = sessions[session_id]["book_processor"]
-
-        # Upload to Gemini File API
         result = await processor.process_file(content, filename)
 
-        # Store file info in session
         sessions[session_id]["file_uri"] = result["file_uri"]
         sessions[session_id]["mime_type"] = result["mime_type"]
         sessions[session_id]["book_title"] = result["filename"]
@@ -173,103 +141,93 @@ async def clear_book(session_id: str):
     return {"success": True}
 
 
-@app.post("/start")
-async def start(request_data: dict = {}):
-    """RTVI protocol: Create a new session."""
-    session_id = str(uuid.uuid4())
-
-    # Initialize session if not exists
-    if session_id not in sessions:
-        sessions[session_id] = {
-            "book_processor": BookProcessor(),
-            "file_uri": None,
-            "mime_type": None,
-            "book_title": None,
-        }
-
-    result = {"sessionId": session_id}
-    if request_data.get("enableDefaultIceServers"):
-        result["iceConfig"] = {"iceServers": [{"urls": "stun:stun.l.google.com:19302"}]}
-
-    return result
-
-
-@app.api_route("/sessions/{session_id}/{path:path}", methods=["POST", "PATCH"])
-async def session_proxy(
+@app.post("/api/session/{session_id}/connect")
+async def connect_session(
     session_id: str,
-    path: str,
     request_data: dict,
     background_tasks: BackgroundTasks,
 ):
-    """RTVI protocol: Proxy requests to session endpoints."""
+    """Create a Daily room and start the bot for a session."""
+    if not _daily_helper:
+        raise HTTPException(status_code=500, detail="Daily API not configured")
+
     if session_id not in sessions:
-        # Create session on the fly
-        sessions[session_id] = {
-            "book_processor": BookProcessor(),
-            "file_uri": None,
-            "mime_type": None,
-            "book_title": None,
-        }
+        raise HTTPException(status_code=404, detail="Session not found")
 
-    if path.endswith("api/offer"):
-        return await offer(request_data, background_tasks, session_id)
-
-    return {"status": "ok"}
-
-
-@app.post("/api/offer")
-async def offer_endpoint(
-    request_data: dict,
-    background_tasks: BackgroundTasks,
-):
-    """Direct WebRTC offer endpoint (without session)."""
-    return await offer(request_data, background_tasks, None)
-
-
-async def offer(
-    request_data: dict,
-    background_tasks: BackgroundTasks,
-    session_id: Optional[str] = None,
-):
-    """Handle WebRTC offer from the client."""
-    pc_id = request_data.get("pc_id")
     tts_model = request_data.get("tts_model", "mars-flash")
 
-    # Get file info from session if available
-    file_uri = None
-    mime_type = None
-    book_title = None
-    if session_id and session_id in sessions:
-        file_uri = sessions[session_id].get("file_uri")
-        mime_type = sessions[session_id].get("mime_type")
-        book_title = sessions[session_id].get("book_title")
+    # Get file info from session
+    file_uri = sessions[session_id].get("file_uri")
+    mime_type = sessions[session_id].get("mime_type")
+    book_title = sessions[session_id].get("book_title")
 
-    if pc_id and pc_id in connections:
-        conn = connections[pc_id]
-        await conn.renegotiate(
-            sdp=request_data["sdp"],
-            type=request_data["type"],
-            restart_pc=request_data.get("restart_pc", False),
+    try:
+        # Create a temporary Daily room (expires in 10 minutes)
+        room = await _daily_helper.create_room(
+            DailyRoomParams(
+                name=f"book-qa-{session_id[:8]}",
+                properties={
+                    "exp": time.time() + 600,  # 10 minutes
+                    "enable_chat": False,
+                    "enable_emoji_reactions": False,
+                    "eject_at_room_exp": True,
+                },
+            )
         )
-    else:
-        conn = SmallWebRTCConnection(ice_servers)
-        await conn.initialize(sdp=request_data["sdp"], type=request_data["type"])
+        logger.info(f"Created Daily room: {room.url}")
 
-        @conn.event_handler("closed")
-        async def handle_closed(c: SmallWebRTCConnection):
-            connections.pop(c.pc_id, None)
-            # Always clean up session to prevent memory leaks
-            if session_id and session_id in sessions:
-                sessions.pop(session_id, None)
-                logger.info(f"Session {session_id} cleaned up")
-            logger.info(f"Connection {c.pc_id} closed, active connections: {len(connections)}, sessions: {len(sessions)}")
+        # Store room URL in session for cleanup
+        sessions[session_id]["room_url"] = room.url
 
-        background_tasks.add_task(run_bot, conn, file_uri, mime_type, book_title, tts_model)
+        # Generate token for the user (client)
+        user_token = await _daily_helper.get_token(
+            room_url=room.url,
+            expiry_time=600,  # 10 minutes
+        )
 
-    answer = conn.get_answer()
-    connections[answer["pc_id"]] = conn
-    logger.info(f"Active connections: {len(connections)}, sessions: {len(sessions)}")
-    return answer
+        # Generate token for the bot
+        bot_token = await _daily_helper.get_token(
+            room_url=room.url,
+            expiry_time=600,
+        )
+
+        # Start the bot in the background
+        background_tasks.add_task(
+            run_bot,
+            room.url,
+            bot_token,
+            file_uri,
+            mime_type,
+            book_title,
+            tts_model,
+            session_id,
+            cleanup_session,
+        )
+
+        logger.info(f"Session {session_id}: Bot started, room: {room.url}")
+
+        return {
+            "room_url": room.url,
+            "token": user_token,
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to create room: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to connect: {str(e)}")
+
+
+async def cleanup_session(session_id: str):
+    """Clean up session and delete Daily room."""
+    if session_id in sessions:
+        room_url = sessions[session_id].get("room_url")
+        if room_url and _daily_helper:
+            try:
+                await _daily_helper.delete_room_by_url(room_url)
+                logger.info(f"Deleted Daily room: {room_url}")
+            except Exception as e:
+                logger.warning(f"Failed to delete room: {e}")
+        sessions.pop(session_id, None)
+        logger.info(f"Session {session_id} cleaned up")
 
 
 # Mount static files for frontend (if exists)

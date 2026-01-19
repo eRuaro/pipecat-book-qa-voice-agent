@@ -1,13 +1,14 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import Daily, { DailyCall, DailyEventObjectAppMessage } from '@daily-co/daily-js';
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
 export type PipelineStatus = 'idle' | 'listening' | 'stt' | 'llm' | 'tts';
 
 export interface TranscriptMessage {
-  id: string;  // Composite ID: "role-messageId" to prevent collisions
+  id: string;
   role: 'user' | 'assistant';
   text: string;
-  timestamp: number;  // Server timestamp for ordering
+  timestamp: number;
   final: boolean;
 }
 
@@ -49,10 +50,7 @@ export function useWebRTC({
   const [pipelineStatus, setPipelineStatus] = useState<PipelineStatus>('idle');
   const [isMuted, setIsMuted] = useState(false);
 
-  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
-  const dataChannelRef = useRef<RTCDataChannel | null>(null);
-  const localStreamRef = useRef<MediaStream | null>(null);
-  const pcIdRef = useRef<string | null>(null);
+  const callObjectRef = useRef<DailyCall | null>(null);
 
   // Use refs to avoid stale closure issues with callbacks
   const onStatusChangeRef = useRef(onStatusChange);
@@ -66,25 +64,22 @@ export function useWebRTC({
     onLogRef.current = onLog;
   }, [onStatusChange, onTranscript, onLog]);
 
-  // Handle incoming messages from the server
-  const handleMessage = useCallback((event: MessageEvent) => {
+  // Handle incoming app messages from the bot
+  const handleAppMessage = useCallback((event: DailyEventObjectAppMessage) => {
     try {
-      const data = JSON.parse(event.data);
-      console.log('[WebRTC] Received message:', data.type, data);
+      const data = event.data as Record<string, unknown>;
+      console.log('[Daily] Received app message:', data);
 
       if (data.type === 'status') {
         const status = data.status as PipelineStatus;
         setPipelineStatus(status);
         onStatusChangeRef.current?.(status);
       } else if (data.type === 'transcript') {
-        // Handle streaming transcripts
-        // Create composite ID using role to prevent collisions between user and assistant messages
         const role = data.role as 'user' | 'assistant';
         let messageId: number;
         if (data.messageId != null) {
-          messageId = data.messageId;
+          messageId = data.messageId as number;
         } else {
-          // Fallback: generate unique ID per role
           messageId = role === 'user' ? ++globalUserMessageId : ++globalAssistantMessageId;
         }
         const compositeId = `${role}-${messageId}`;
@@ -92,163 +87,124 @@ export function useWebRTC({
         const message: TranscriptMessage = {
           id: compositeId,
           role,
-          text: data.text,
-          timestamp: data.timestamp ?? Date.now(),  // Prefer server timestamp
-          final: data.final ?? true,
+          text: data.text as string,
+          timestamp: (data.timestamp as number) ?? Date.now(),
+          final: (data.final as boolean) ?? true,
         };
-        console.log('[WebRTC] Transcript message:', message);
+        console.log('[Daily] Transcript message:', message);
         onTranscriptRef.current?.(message);
       } else if (data.type === 'log') {
         const log: LogMessage = {
-          text: data.text,
+          text: data.text as string,
           timestamp: Date.now(),
         };
         onLogRef.current?.(log);
       }
     } catch (e) {
-      console.error('Error parsing message:', e);
+      console.error('Error handling app message:', e);
     }
-  }, []); // No dependencies needed - using refs
+  }, []);
 
-  // Disconnect from the server - defined before connect so it can be referenced
-  const disconnect = useCallback(() => {
-    if (dataChannelRef.current) {
-      dataChannelRef.current.close();
-      dataChannelRef.current = null;
+  // Disconnect from the Daily room
+  const disconnect = useCallback(async () => {
+    if (callObjectRef.current) {
+      await callObjectRef.current.leave();
+      await callObjectRef.current.destroy();
+      callObjectRef.current = null;
     }
-
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
-    }
-
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((track) => track.stop());
-      localStreamRef.current = null;
-    }
-
-    pcIdRef.current = null;
     setConnectionStatus('disconnected');
     setPipelineStatus('idle');
   }, []);
 
-  // Connect to the WebRTC server
+  // Connect to the Daily room
   const connect = useCallback(async () => {
-    if (connectionStatus !== 'disconnected') return;
+    if (connectionStatus !== 'disconnected' || !sessionId) return;
 
     setConnectionStatus('connecting');
 
     try {
-      // Fetch ICE servers config from backend (includes TURN if configured)
-      let iceServers: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }];
-      try {
-        const iceResponse = await fetch('/api/ice-servers');
-        const iceConfig = await iceResponse.json();
-        if (iceConfig.iceServers) {
-          iceServers = iceConfig.iceServers;
-        }
-      } catch (e) {
-        console.warn('Failed to fetch ICE servers, using default STUN only:', e);
-      }
-
-      // Get microphone access
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
-      localStreamRef.current = stream;
-
-      // Create peer connection with fetched ICE servers
-      const pc = new RTCPeerConnection({ iceServers });
-      peerConnectionRef.current = pc;
-
-      // Add audio track
-      stream.getTracks().forEach((track) => {
-        pc.addTrack(track, stream);
-      });
-
-      // Handle incoming audio
-      pc.ontrack = (event) => {
-        const audio = new Audio();
-        audio.srcObject = event.streams[0];
-        audio.play().catch(console.error);
-      };
-
-      // Create data channel for messages
-      const dataChannel = pc.createDataChannel('messages');
-      dataChannelRef.current = dataChannel;
-
-      dataChannel.onmessage = handleMessage;
-      dataChannel.onopen = () => {
-        console.log('Data channel opened');
-      };
-
-      // Create and send offer
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-
-      // Wait for ICE gathering to complete
-      await new Promise<void>((resolve) => {
-        if (pc.iceGatheringState === 'complete') {
-          resolve();
-        } else {
-          pc.onicegatheringstatechange = () => {
-            if (pc.iceGatheringState === 'complete') {
-              resolve();
-            }
-          };
-        }
-      });
-
-      // Send offer to server
-      const offerUrl = sessionId
-        ? `/sessions/${sessionId}/api/offer`
-        : '/api/offer';
-
-      const response = await fetch(offerUrl, {
+      // Request room URL and token from backend
+      const response = await fetch(`/api/session/${sessionId}/connect`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sdp: pc.localDescription?.sdp,
-          type: pc.localDescription?.type,
-          pc_id: pcIdRef.current,
-          tts_model: ttsModel,
-        }),
+        body: JSON.stringify({ tts_model: ttsModel }),
       });
 
-      const answer = await response.json();
-      pcIdRef.current = answer.pc_id;
+      if (!response.ok) {
+        throw new Error(`Failed to connect: ${response.statusText}`);
+      }
 
-      await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      const { room_url, token } = await response.json();
+      console.log('[Daily] Got room URL:', room_url);
 
-      setConnectionStatus('connected');
-      setPipelineStatus('idle');
+      // Create Daily call object
+      const callObject = Daily.createCallObject({
+        audioSource: true,
+        videoSource: false,
+      });
+      callObjectRef.current = callObject;
+
+      // Set up event handlers
+      callObject.on('joined-meeting', () => {
+        console.log('[Daily] Joined meeting');
+        setConnectionStatus('connected');
+        setPipelineStatus('idle');
+      });
+
+      callObject.on('left-meeting', () => {
+        console.log('[Daily] Left meeting');
+        setConnectionStatus('disconnected');
+        setPipelineStatus('idle');
+      });
+
+      callObject.on('error', (error) => {
+        console.error('[Daily] Error:', error);
+        setConnectionStatus('disconnected');
+        disconnect();
+      });
+
+      callObject.on('app-message', handleAppMessage);
+
+      // Handle remote audio
+      callObject.on('track-started', (event) => {
+        if (event.track?.kind === 'audio' && event.participant && !event.participant.local) {
+          console.log('[Daily] Remote audio track started');
+          const audio = new Audio();
+          audio.srcObject = new MediaStream([event.track]);
+          audio.play().catch(console.error);
+        }
+      });
+
+      // Join the room
+      await callObject.join({
+        url: room_url,
+        token: token,
+      });
+
     } catch (error) {
       console.error('Connection error:', error);
       setConnectionStatus('disconnected');
-      disconnect();
+      await disconnect();
     }
-  }, [connectionStatus, sessionId, ttsModel, handleMessage, disconnect]);
+  }, [connectionStatus, sessionId, ttsModel, handleAppMessage, disconnect]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      disconnect();
+      if (callObjectRef.current) {
+        callObjectRef.current.leave();
+        callObjectRef.current.destroy();
+      }
     };
-  }, [disconnect]);
+  }, []);
 
   // Toggle microphone mute
   const toggleMute = useCallback(() => {
-    if (localStreamRef.current) {
-      const audioTrack = localStreamRef.current.getAudioTracks()[0];
-      if (audioTrack) {
-        audioTrack.enabled = !audioTrack.enabled;
-        setIsMuted(!audioTrack.enabled);
-        console.log('[WebRTC] Microphone muted:', !audioTrack.enabled);
-      }
+    if (callObjectRef.current) {
+      const currentMuteState = callObjectRef.current.localAudio() === false;
+      callObjectRef.current.setLocalAudio(currentMuteState);
+      setIsMuted(!currentMuteState);
+      console.log('[Daily] Microphone muted:', !currentMuteState);
     }
   }, []);
 

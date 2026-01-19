@@ -1,7 +1,7 @@
 """Main Pipecat bot for book Q&A voice agent."""
 
 import os
-from typing import Dict, Optional
+from typing import Callable, Optional
 
 from loguru import logger
 
@@ -9,7 +9,7 @@ from pipecat.adapters.schemas.function_schema import FunctionSchema
 from pipecat.adapters.schemas.tools_schema import ToolsSchema
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.audio.vad.vad_analyzer import VADParams
-from pipecat.frames.frames import LLMRunFrame, OutputTransportMessageFrame
+from pipecat.frames.frames import LLMRunFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
@@ -19,8 +19,7 @@ from pipecat.services.camb.tts import CambTTSService
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.google.llm import GoogleLLMService
 from pipecat.services.llm_service import FunctionCallParams
-from pipecat.transports.base_transport import TransportParams
-from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
+from pipecat.transports.services.daily import DailyParams, DailyTransport
 
 from progress_tracker import STTProgressProcessor, LLMProgressProcessor, TTSStatusProcessor
 from web_search import WebSearcher
@@ -28,7 +27,6 @@ from web_search import WebSearcher
 
 # Cached API clients (reused across connections to avoid connection overhead)
 _camb_client = None
-_google_client = None
 web_searcher: Optional[WebSearcher] = None
 
 
@@ -135,28 +133,35 @@ async def search_web(params: FunctionCallParams):
 
 
 async def run_bot(
-    conn: SmallWebRTCConnection,
+    room_url: str,
+    token: str,
     file_uri: Optional[str] = None,
     mime_type: Optional[str] = None,
     book_title: Optional[str] = None,
     tts_model: str = "mars-flash",
+    session_id: Optional[str] = None,
+    cleanup_callback: Optional[Callable] = None,
 ):
-    """Run the voice agent bot for a WebRTC connection.
+    """Run the voice agent bot for a Daily room.
 
     Args:
-        conn: The WebRTC connection.
+        room_url: The Daily room URL.
+        token: The Daily token for the bot.
         file_uri: Optional Gemini file URI for the uploaded document.
         mime_type: Optional mime type of the uploaded file.
         book_title: Optional book title.
         tts_model: TTS model to use (mars-flash or mars-pro).
+        session_id: Optional session ID for cleanup.
+        cleanup_callback: Optional callback to clean up session when done.
     """
-    from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
-
-    transport = SmallWebRTCTransport(
-        webrtc_connection=conn,
-        params=TransportParams(
+    transport = DailyTransport(
+        room_url,
+        token,
+        "Book Q&A Bot",
+        DailyParams(
             audio_in_enabled=True,
             audio_out_enabled=True,
+            vad_enabled=True,
             vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.3)),
         ),
     )
@@ -203,22 +208,22 @@ async def run_bot(
     context = LLMContext(messages, tools)
     context_aggregator = LLMContextAggregatorPair(context)
 
-    # Progress processors for status updates - split by position in pipeline
-    stt_progress = STTProgressProcessor()      # After STT for transcription frames
-    llm_progress = LLMProgressProcessor()      # After LLM for response streaming
-    tts_status = TTSStatusProcessor()          # After TTS for speaking status
+    # Progress processors for status updates
+    stt_progress = STTProgressProcessor()
+    llm_progress = LLMProgressProcessor()
+    tts_status = TTSStatusProcessor()
 
     # Build the pipeline
     pipeline = Pipeline(
         [
             transport.input(),
             stt,
-            stt_progress,           # Catches TranscriptionFrame, sends user transcript
+            stt_progress,
             context_aggregator.user(),
             llm,
-            llm_progress,           # Catches LLMTextFrame, sends assistant transcript
+            llm_progress,
             tts,
-            tts_status,             # Catches TTS frames for speaking status
+            tts_status,
             transport.output(),
             context_aggregator.assistant(),
         ]
@@ -229,20 +234,26 @@ async def run_bot(
         params=PipelineParams(enable_metrics=True),
     )
 
-    @transport.event_handler("on_client_connected")
-    async def on_connected(transport, client):
-        logger.info("Client connected")
-        # Send initial status
-        await task.queue_frame(
-            OutputTransportMessageFrame(message={"type": "status", "status": "connected"})
-        )
+    @transport.event_handler("on_first_participant_joined")
+    async def on_first_participant_joined(transport, participant):
+        logger.info(f"Participant joined: {participant['id']}")
         # Trigger initial greeting
         await task.queue_frames([LLMRunFrame()])
 
-    @transport.event_handler("on_client_disconnected")
-    async def on_disconnected(transport, client):
-        logger.info("Client disconnected")
+    @transport.event_handler("on_participant_left")
+    async def on_participant_left(transport, participant, reason):
+        logger.info(f"Participant left: {participant['id']}, reason: {reason}")
         await task.cancel()
+
+    @transport.event_handler("on_dialin_ready")
+    async def on_dialin_ready(transport, cdata):
+        logger.info("Dialin ready")
 
     runner = PipelineRunner(handle_sigint=False)
     await runner.run(task)
+
+    # Cleanup session when bot exits
+    if cleanup_callback and session_id:
+        await cleanup_callback(session_id)
+
+    logger.info("Bot finished")

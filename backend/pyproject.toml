@@ -4,13 +4,14 @@ version = "0.1.0"
 description = "Book Q&A Voice Agent powered by CAMB AI + Pipecat"
 requires-python = ">=3.10"
 dependencies = [
-    "pipecat-ai[silero,deepgram,google,camb,webrtc] @ git+https://github.com/pipecat-ai/pipecat.git",
+    "pipecat-ai[silero,deepgram,google,camb,daily] @ git+https://github.com/pipecat-ai/pipecat.git",
     "fastapi",
     "uvicorn[standard]",
     "python-multipart",
     "exa-py",
     "python-dotenv",
     "aiofiles",
+    "aiohttp",
 ]
 
 [project.scripts]
